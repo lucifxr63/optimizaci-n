@@ -16,16 +16,55 @@ def append_output(widget, text):
 
 
 def parse_ampl_routes(ampl_text, cities):
-    """Parse routes from AMPL output displaying x[s,i,j] variables."""
+    """Parse salesman routes from AMPL ``display x`` output.
+
+    AMPL may print ``x`` either as individual assignments ``x[s,i,j] = 1`` or as
+    matrices.  This parser supports both formats and handles multiple salesmen.
+    """
+
+    edges = []
+
+    # 1) ``x[s,i,j] = 1`` assignments
     pattern = re.compile(r"x\[(\d+),(\d+),(\d+)\]\s*=\s*1")
-    edges = pattern.findall(ampl_text)
+    for s, i, j in pattern.findall(ampl_text):
+        edges.append((int(s), int(i), int(j)))
+
+    # 2) Matrix form ``x [s,*,*]`` possibly written as ``[s,*,*]``
+    matrix_pat = re.compile(r"(?:x\s*)?\[(\d+),\*,\*\]")
+    lines = ampl_text.splitlines()
+    idx = 0
+    while idx < len(lines):
+        m = matrix_pat.match(lines[idx].strip())
+        if not m:
+            idx += 1
+            continue
+        s = int(m.group(1))
+        idx += 1
+        if idx >= len(lines):
+            break
+        header = lines[idx]
+        cols = [int(n) for n in re.findall(r"-?\d+", header)]
+        idx += 1
+        while idx < len(lines):
+            row = lines[idx].strip()
+            if not row or row.startswith("[") or row.startswith(";"):
+                break
+            tokens = re.findall(r"-?\d+", row)
+            if len(tokens) == len(cols) + 1:
+                i = int(tokens[0])
+                for col, val in zip(cols, tokens[1:]):
+                    if val == "1":
+                        edges.append((s, i, col))
+            idx += 1
+        # do not consume delimiter line; outer loop will reconsider it
     if not edges:
         return []
-    edges = [(int(s), int(i), int(j)) for s, i, j in edges]
+
     salesmen = sorted({s for s, _, _ in edges})
     by_s = {s: {} for s in salesmen}
     for s, i, j in edges:
         by_s[s][i] = j
+
     city_map = {c.idx: c for c in cities}
     routes = []
     for s in salesmen:
@@ -40,6 +79,7 @@ def parse_ampl_routes(ampl_text, cities):
                 break
             current = nxt
         routes.append(route)
+
     return routes
 
 
@@ -76,12 +116,17 @@ def parse_lkh_tour(tour_file, cities):
 
 
 def run_ampl(output, csv_path):
-    # Ruta al ejecutable de AMPL
-    ampl_path = r"D:\DEV\AMPL\ampl.exe"
-    
-    # Verificar si el archivo ejecutable existe
-    if not os.path.exists(ampl_path):
-        append_output(output, f"Error: No se encontró el ejecutable de AMPL en {ampl_path}\n")
+    """Execute the AMPL model and display the resulting routes."""
+    # Allow configuration via the AMPL_PATH environment variable.  If not
+    # provided, fall back to searching ``ampl`` in the PATH.
+    ampl_path = os.environ.get("AMPL_PATH", "ampl")
+
+    # Verificar si el archivo ejecutable existe o está en PATH
+    if not shutil.which(ampl_path):
+        append_output(
+            output,
+            f"Error: No se encontró el ejecutable de AMPL ({ampl_path}).\n",
+        )
         return
     
     # Obtener la ruta base del proyecto
@@ -128,20 +173,26 @@ def run_ampl(output, csv_path):
             check=True
         )
         
-        # Mostrar resultados
+        # Mostrar resultados crudos
         append_output(output, "\n=== RESULTADOS DE AMPL ===\n")
         append_output(output, result.stdout)
-        
+
         if result.stderr:
             append_output(output, "\n=== ADVERTENCIAS ===\n")
             append_output(output, result.stderr)
-            
-        # Intentar cargar las ciudades y mostrar las rutas
+
+        # Cargar las ciudades y mostrar las rutas
         try:
             cities = load_cities(csv_path.get())
             routes = parse_ampl_routes(result.stdout, cities)
             if routes:
+                append_output(output, "\nRutas encontradas:\n")
+                for i, route in enumerate(routes, 1):
+                    path = " → ".join(str(c.idx) for c in route)
+                    append_output(output, f"Vendedor {i}: {path}\n")
                 plot_routes(routes)
+            else:
+                append_output(output, "No se pudieron interpretar rutas en la salida de AMPL\n")
         except Exception as e:
             append_output(output, f"\nError al mostrar las rutas: {str(e)}\n")
             
