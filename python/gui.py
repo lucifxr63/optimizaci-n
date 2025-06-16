@@ -76,25 +76,92 @@ def parse_lkh_tour(tour_file, cities):
 
 
 def run_ampl(output, csv_path):
-    if not shutil.which("ampl"):
-        append_output(output, "AMPL executable not found in PATH\n")
+    # Ruta al ejecutable de AMPL
+    ampl_path = r"D:\DEV\AMPL\ampl.exe"
+    
+    # Verificar si el archivo ejecutable existe
+    if not os.path.exists(ampl_path):
+        append_output(output, f"Error: No se encontró el ejecutable de AMPL en {ampl_path}\n")
         return
-    cmd = (
-        "model ampl/modelo_bmtsp.mod; data ampl/datos_bmtsp.dat; solve;"
-        " display _solve_message;"
-        " display {s in S, i in V, j in V: x[s,i,j] > 0.5} x[s,i,j];"
-    )
+    
+    # Obtener la ruta base del proyecto
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    model_path = os.path.join(base_dir, "ampl", "modelo_bmtsp.mod")
+    data_path = os.path.join(base_dir, "ampl", "datos_bmtsp.dat")
+    
+    # Verificar que los archivos existan
+    if not os.path.exists(model_path):
+        append_output(output, f"Error: No se encontró el archivo del modelo en {model_path}\n")
+        return
+    if not os.path.exists(data_path):
+        append_output(output, f"Error: No se encontró el archivo de datos en {data_path}\n")
+        return
+    
+    # Crear un archivo temporal para los comandos de AMPL
+    import tempfile
+    import os
+    
+    # Crear un archivo temporal
+    temp_file = None
     try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.run', delete=False) as f:
+            temp_file = f.name
+            f.write(f'''
+            model "{model_path}";
+            data "{data_path}";
+            option solver cplex;
+            solve;
+            
+            display Total_Distance;
+            display x;
+            ''')
+        
+        # Usar el archivo temporal con AMPL
+        cmd = [ampl_path, temp_file]
+        
+        append_output(output, "Ejecutando AMPL...\n")
+        
         result = subprocess.run(
-            ["ampl"], input=cmd, text=True, capture_output=True, check=True
+            cmd,
+            text=True,
+            capture_output=True,
+            check=True
         )
-        append_output(output, result.stdout + "\n")
-        cities = load_cities(csv_path.get())
-        routes = parse_ampl_routes(result.stdout, cities)
-        if routes:
-            plot_routes(routes)
+        
+        # Mostrar resultados
+        append_output(output, "\n=== RESULTADOS DE AMPL ===\n")
+        append_output(output, result.stdout)
+        
+        if result.stderr:
+            append_output(output, "\n=== ADVERTENCIAS ===\n")
+            append_output(output, result.stderr)
+            
+        # Intentar cargar las ciudades y mostrar las rutas
+        try:
+            cities = load_cities(csv_path.get())
+            routes = parse_ampl_routes(result.stdout, cities)
+            if routes:
+                plot_routes(routes)
+        except Exception as e:
+            append_output(output, f"\nError al mostrar las rutas: {str(e)}\n")
+            
     except subprocess.CalledProcessError as e:
-        append_output(output, e.stderr + "\n")
+        error_msg = f"\n=== ERROR AL EJECUTAR AMPL ===\n"
+        error_msg += f"Código de salida: {e.returncode}\n"
+        if e.stdout:
+            error_msg += f"Salida estándar:\n{e.stdout}\n"
+        if e.stderr:
+            error_msg += f"Error estándar:\n{e.stderr}\n"
+        append_output(output, error_msg)
+    except Exception as e:
+        append_output(output, f"\nError inesperado: {str(e)}\n")
+    finally:
+        # Asegurarse de eliminar el archivo temporal
+        if temp_file and os.path.exists(temp_file):
+            try:
+                os.unlink(temp_file)
+            except Exception:
+                pass
 
 
 def run_lkh(output, csv_path):
