@@ -84,3 +84,17 @@ the heuristic output.
 
 With these resources you can test small instances, compare heuristic results
 with those from LKH, and adapt the AMPL model for larger problems.
+
+## 4. Simple GUI
+
+The script `python/gui.py` provides a tiny Tkinter interface to run the
+heuristic, the AMPL model or LKH from one place. Launch it with:
+
+```bash
+python python/gui.py
+```
+
+Enter the CSV file and parameters for the heuristic (defaults are already
+filled) and then click **Run Heuristic**, **Run AMPL** or **Run LKH**. Output
+from the selected solver will appear in the text box. AMPL or LKH must be
+available in your `PATH` for those buttons to work.
