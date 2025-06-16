@@ -1,18 +1,42 @@
-import os
-import re
-import shutil
-import subprocess
-import sys
-import tkinter as tk
-from tkinter import ttk
-from tkinter import scrolledtext
+def parse_ampl_routes(ampl_text, cities):
+    """Parse salesman routes from AMPL ``display x`` output.
 
-from heuristica_bmtsp import load_cities, heuristic_bmtsp, plot_routes
+    AMPL may print ``x`` either as individual assignments ``x[s,i,j] = 1`` or as
+    matrices.  This parser supports both formats.
+    """
 
+    edges = []
 
-def append_output(widget, text):
-    widget.insert(tk.END, text)
-    widget.see(tk.END)
+    # First, look for ``x[s,i,j] = 1`` lines
+    pattern = re.compile(r"x\[(\d+),(\d+),(\d+)\]\s*=\s*1")
+    for s, i, j in pattern.findall(ampl_text):
+        edges.append((int(s), int(i), int(j)))
+
+    # If nothing found, attempt to parse matrix form "x [s,*,*]" printed by AMPL
+    if not edges:
+        lines = iter(ampl_text.splitlines())
+        for line in lines:
+            m = re.match(r"x\s*\[(\d+),\*,\*\]", line.strip())
+            if not m:
+                continue
+            s = int(m.group(1))
+
+            # Read header with column indices
+            header = next(lines, "")
+            cols = [int(n) for n in re.findall(r"-?\d+", header)]
+
+            for row in lines:
+                row = row.strip()
+                if not row or row.startswith("[") or row.startswith(";"):
+                    break
+                tokens = re.findall(r"-?\d+", row)
+                if len(tokens) != len(cols) + 1:
+                    continue
+                i = int(tokens[0])
+                vals = tokens[1:]
+                for col, val in zip(cols, vals):
+                    if val == "1":
+                        edges.append((s, i, col))
 
 
 def parse_ampl_routes(ampl_text, cities):
@@ -57,6 +81,7 @@ def parse_ampl_routes(ampl_text, cities):
                         edges.append((s, i, col))
             idx += 1
         # do not consume delimiter line; outer loop will reconsider it
+
     if not edges:
         return []
 
@@ -67,52 +92,42 @@ def parse_ampl_routes(ampl_text, cities):
 
     city_map = {c.idx: c for c in cities}
     routes = []
+
     for s in salesmen:
-        route = [city_map[0]]
+        if s not in by_s:
+            continue
+        route = [city_map[0]]  # Empezar en el depósito
         current = 0
+        visited = set()
+
         while True:
+            if current in visited:
+                break  # Evitar ciclos infinitos
+            visited.add(current)
+
             nxt = by_s[s].get(current)
-            if nxt is None:
+            if nxt is None or nxt == current:
                 break
-            route.append(city_map[nxt])
+
             if nxt == 0:
+                route.append(city_map[0])
                 break
+
+            route.append(city_map[nxt])
             current = nxt
+
         routes.append(route)
 
     return routes
 
 
-def parse_lkh_tour(tour_file, cities):
-    """Parse LKH tour file into routes."""
-    if not os.path.exists(tour_file):
-        return []
-    numbers = []
-    with open(tour_file) as f:
-        for tok in f.read().split():
-            try:
-                numbers.append(int(tok))
-            except ValueError:
-                pass
-    if not numbers:
-        return []
-    seq = numbers[1:]
-    city_map = {c.idx: c for c in cities}
-    routes = []
-    route = [city_map[0]]
-    for n in seq:
-        if n == -1:
+            if current == 0 or len(visited) > len(city_map):
+                break
+
+        if route[-1].idx != 0:
             route.append(city_map[0])
-            routes.append(route)
-            route = [city_map[0]]
-        elif n == 0:
-            break
-        else:
-            route.append(city_map[n - 1])
-    if len(route) > 1:
-        route.append(city_map[0])
+
         routes.append(route)
-    return routes
 
 
 def run_ampl(output, csv_path):
@@ -297,3 +312,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+    return routes
+
