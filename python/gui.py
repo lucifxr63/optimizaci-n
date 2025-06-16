@@ -4,8 +4,12 @@ import shutil
 import subprocess
 import sys
 import tkinter as tk
-from tkinter import ttk
-from tkinter import scrolledtext
+from tkinter import ttk, scrolledtext, filedialog, messagebox
+import tempfile
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
+from dataclasses import dataclass
 
 from heuristica_bmtsp import load_cities, heuristic_bmtsp, plot_routes
 
@@ -17,29 +21,85 @@ def append_output(widget, text):
 
 def parse_ampl_routes(ampl_text, cities):
     """Parse routes from AMPL output displaying x[s,i,j] variables."""
-    pattern = re.compile(r"x\[(\d+),(\d+),(\d+)\]\s*=\s*1")
-    edges = pattern.findall(ampl_text)
+    # Primero intentar con el formato de tabla
+    table_pattern = re.compile(r'\[([12]),\*,\*\]\s*:.*?:=(.*?)(?=\n\s*\[|\Z)', re.DOTALL)
+    tables = table_pattern.findall(ampl_text)
+    
+    if not tables:
+        # Si no encontramos tablas, intentar con el formato anterior
+        pattern = re.compile(r"x\[(\d+),(\d+),(\d+)\]\s*=\s*1")
+        edges = pattern.findall(ampl_text)
+        if not edges:
+            return []
+        edges = [(int(s), int(i), int(j)) for s, i, j in edges]
+    else:
+        # Procesar las tablas
+        edges = []
+        for s, table in tables:
+            s = int(s)
+            # Procesar cada línea de la tabla
+            for line in table.split('\n'):
+                if not line.strip() or ':' not in line:
+                    continue
+                # Extraer la fila (i) y los valores
+                parts = line.split(':')
+                if len(parts) < 2:
+                    continue
+                i = int(parts[0].strip())
+                values = parts[1].split()
+                # Los índices de columna van de 0 a len(values)-1
+                for j, val in enumerate(values):
+                    try:
+                        if int(val) == 1 and i != j:  # Evitar bucles a sí mismo
+                            edges.append((s, i, j))
+                    except ValueError:
+                        continue
+    
     if not edges:
         return []
-    edges = [(int(s), int(i), int(j)) for s, i, j in edges]
+        
+    # Construir las rutas a partir de las aristas
     salesmen = sorted({s for s, _, _ in edges})
     by_s = {s: {} for s in salesmen}
     for s, i, j in edges:
         by_s[s][i] = j
+    
     city_map = {c.idx: c for c in cities}
     routes = []
+    
     for s in salesmen:
-        route = [city_map[0]]
+        if s not in by_s:
+            continue
+        route = [city_map[0]]  # Empezar en el depósito
         current = 0
+        visited = set()
+        
         while True:
+            if current in visited:
+                break  # Evitar ciclos infinitos
+            visited.add(current)
+            
             nxt = by_s[s].get(current)
-            if nxt is None:
+            if nxt is None or nxt == current:
                 break
+                
+            if nxt == 0:  # Si volvemos al depósito, terminar la ruta
+                route.append(city_map[0])
+                break
+                
             route.append(city_map[nxt])
-            if nxt == 0:
-                break
             current = nxt
+            
+            # Si hemos vuelto al depósito o no hay más ciudades que visitar
+            if current == 0 or len(visited) > len(city_map):
+                break
+        
+        # Asegurarse de terminar en el depósito
+        if route[-1].idx != 0:
+            route.append(city_map[0])
+            
         routes.append(route)
+    
     return routes
 
 
@@ -77,15 +137,15 @@ def parse_lkh_tour(tour_file, cities):
 
 def run_ampl(output, csv_path):
     """Execute the AMPL model and display the resulting routes."""
-    # Allow configuration via the AMPL_PATH environment variable.  If not
-    # provided, fall back to searching ``ampl`` in the PATH.
-    ampl_path = os.environ.get("AMPL_PATH", "ampl")
+    # Usar la ruta completa al ejecutable de AMPL
+    ampl_path = r"D:\DEV\AMPL\ampl.exe"
 
-    # Verificar si el archivo ejecutable existe o está en PATH
-    if not shutil.which(ampl_path):
+    # Verificar si el archivo ejecutable existe
+    if not os.path.exists(ampl_path):
         append_output(
             output,
-            f"Error: No se encontró el ejecutable de AMPL ({ampl_path}).\n",
+            f"Error: No se encontró el ejecutable de AMPL en {ampl_path}.\n"
+            "Por favor, verifica que la ruta sea correcta.\n"
         )
         return
     
@@ -103,8 +163,6 @@ def run_ampl(output, csv_path):
         return
     
     # Crear un archivo temporal para los comandos de AMPL
-    import tempfile
-    import os
     
     # Crear un archivo temporal
     temp_file = None
