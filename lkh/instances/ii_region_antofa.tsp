@@ -1,0 +1,18 @@
+NAME: ii_region_antofa
+TYPE: TSP
+COMMENT: Simulated region ii_region_antofa
+DIMENSION: 11
+EDGE_WEIGHT_TYPE: EUC_2D
+NODE_COORD_SECTION
+1 10 60
+2 25 75
+3 45 80
+4 65 75
+5 80 65
+6 85 50
+7 70 35
+8 55 20
+9 35 15
+10 20 30
+11 30 50
+EOF

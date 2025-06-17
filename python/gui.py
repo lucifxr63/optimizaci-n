@@ -1,42 +1,18 @@
-def parse_ampl_routes(ampl_text, cities):
-    """Parse salesman routes from AMPL ``display x`` output.
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tkinter as tk
+from tkinter import ttk
+from tkinter import scrolledtext
 
-    AMPL may print ``x`` either as individual assignments ``x[s,i,j] = 1`` or as
-    matrices.  This parser supports both formats.
-    """
+from heuristica_bmtsp import load_cities, heuristic_bmtsp, plot_routes
 
-    edges = []
 
-    # First, look for ``x[s,i,j] = 1`` lines
-    pattern = re.compile(r"x\[(\d+),(\d+),(\d+)\]\s*=\s*1")
-    for s, i, j in pattern.findall(ampl_text):
-        edges.append((int(s), int(i), int(j)))
-
-    # If nothing found, attempt to parse matrix form "x [s,*,*]" printed by AMPL
-    if not edges:
-        lines = iter(ampl_text.splitlines())
-        for line in lines:
-            m = re.match(r"x\s*\[(\d+),\*,\*\]", line.strip())
-            if not m:
-                continue
-            s = int(m.group(1))
-
-            # Read header with column indices
-            header = next(lines, "")
-            cols = [int(n) for n in re.findall(r"-?\d+", header)]
-
-            for row in lines:
-                row = row.strip()
-                if not row or row.startswith("[") or row.startswith(";"):
-                    break
-                tokens = re.findall(r"-?\d+", row)
-                if len(tokens) != len(cols) + 1:
-                    continue
-                i = int(tokens[0])
-                vals = tokens[1:]
-                for col, val in zip(cols, vals):
-                    if val == "1":
-                        edges.append((s, i, col))
+def append_output(widget, text):
+    widget.insert(tk.END, text)
+    widget.see(tk.END)
 
 
 def parse_ampl_routes(ampl_text, cities):
@@ -81,7 +57,6 @@ def parse_ampl_routes(ampl_text, cities):
                         edges.append((s, i, col))
             idx += 1
         # do not consume delimiter line; outer loop will reconsider it
-
     if not edges:
         return []
 
@@ -92,42 +67,52 @@ def parse_ampl_routes(ampl_text, cities):
 
     city_map = {c.idx: c for c in cities}
     routes = []
-
     for s in salesmen:
-        if s not in by_s:
-            continue
-        route = [city_map[0]]  # Empezar en el depósito
+        route = [city_map[0]]
         current = 0
-        visited = set()
-
         while True:
-            if current in visited:
-                break  # Evitar ciclos infinitos
-            visited.add(current)
-
             nxt = by_s[s].get(current)
-            if nxt is None or nxt == current:
+            if nxt is None:
                 break
-
-            if nxt == 0:
-                route.append(city_map[0])
-                break
-
             route.append(city_map[nxt])
+            if nxt == 0:
+                break
             current = nxt
-
         routes.append(route)
 
     return routes
 
 
-            if current == 0 or len(visited) > len(city_map):
-                break
-
-        if route[-1].idx != 0:
+def parse_lkh_tour(tour_file, cities):
+    """Parse LKH tour file into routes."""
+    if not os.path.exists(tour_file):
+        return []
+    numbers = []
+    with open(tour_file) as f:
+        for tok in f.read().split():
+            try:
+                numbers.append(int(tok))
+            except ValueError:
+                pass
+    if not numbers:
+        return []
+    seq = numbers[1:]
+    city_map = {c.idx: c for c in cities}
+    routes = []
+    route = [city_map[0]]
+    for n in seq:
+        if n == -1:
             route.append(city_map[0])
-
+            routes.append(route)
+            route = [city_map[0]]
+        elif n == 0:
+            break
+        else:
+            route.append(city_map[n - 1])
+    if len(route) > 1:
+        route.append(city_map[0])
         routes.append(route)
+    return routes
 
 
 def run_ampl(output, csv_path):
@@ -234,84 +219,166 @@ def run_lkh(output, csv_path):
     if not shutil.which("LKH"):
         append_output(output, "LKH executable not found in PATH\n")
         return
+    
+    # Obtener la ruta base del proyecto
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    tsp_file = os.path.join(base_dir, "ampl", "bmtsp.tsp")
+    par_file = os.path.join(base_dir, "ampl", "bmtsp.par")
+    
+    # Verificar que los archivos existan
+    if not os.path.exists(tsp_file):
+        append_output(output, f"Error: No se encontró el archivo TSP en {tsp_file}\n")
+        return
+    if not os.path.exists(par_file):
+        append_output(output, f"Error: No se encontró el archivo de parámetros en {par_file}\n")
+        return
+    
     try:
+        append_output(output, "Ejecutando LKH...\n")
         result = subprocess.run(
-            ["LKH", "lkh/example.par"], text=True, capture_output=True, check=True
+            ["LKH", par_file],
+            text=True,
+            capture_output=True,
+            check=True
         )
-        append_output(output, result.stdout + "\n")
-        tour_file = os.path.join("lkh", "example.tour")
-        cities = load_cities(csv_path.get())
-        routes = parse_lkh_tour(tour_file, cities)
-        if routes:
-            plot_routes(routes)
+        
+        # Mostrar resultados
+        append_output(output, "\n=== RESULTADOS DE LKH ===\n")
+        append_output(output, result.stdout)
+        
+        if result.stderr:
+            append_output(output, "\n=== ADVERTENCIAS ===\n")
+            append_output(output, result.stderr)
+        
+        # Procesar archivo de tour
+        tour_file = os.path.splitext(par_file)[0] + ".tour"
+        if os.path.exists(tour_file):
+            with open(tour_file) as f:
+                tour_content = f.read()
+                append_output(output, "\n=== TOUR ENCONTRADO ===\n")
+                append_output(output, tour_content)
+                
+                # Cargar las ciudades y mostrar las rutas
+                try:
+                    cities = load_cities(csv_path.get())
+                    routes = parse_lkh_tour(tour_file, cities)
+                    if routes:
+                        append_output(output, "\nRutas encontradas:\n")
+                        for i, route in enumerate(routes, 1):
+                            path = " → ".join(str(c.idx) for c in route)
+                            append_output(output, f"Vendedor {i}: {path}\n")
+                        plot_routes(routes)
+                except Exception as e:
+                    append_output(output, f"\nError al mostrar las rutas: {str(e)}\n")
+        else:
+            append_output(output, "\nNo se encontró el archivo de tour generado\n")
+            
     except subprocess.CalledProcessError as e:
-        append_output(output, e.stderr + "\n")
+        error_msg = "\n=== ERROR AL EJECUTAR LKH ===\n"
+        error_msg += f"Código de salida: {e.returncode}\n"
+        if e.stdout:
+            error_msg += f"Salida estándar:\n{e.stdout}\n"
+        if e.stderr:
+            error_msg += f"Error estándar:\n{e.stderr}\n"
+        append_output(output, error_msg)
+    except Exception as e:
+        append_output(output, f"\nError inesperado: {str(e)}\n")
 
 
-def run_heuristic(csv_path, k_entry, max_entry, output):
-    try:
-        k = int(k_entry.get())
-        max_c = int(max_entry.get())
-    except ValueError:
-        append_output(output, "Invalid numeric parameters\n")
-        return
-    if not os.path.exists(csv_path.get()):
-        append_output(output, "CSV file not found\n")
-        return
-    cities = load_cities(csv_path.get())
-    routes, cost = heuristic_bmtsp(cities, k, max_c)
-    append_output(output, f"Total cost: {cost:.2f}\n")
-    for i, route in enumerate(routes, 1):
-        path = " -> ".join(str(c.idx) for c in route)
-        append_output(output, f"Salesman {i}: {path}\n")
-    append_output(output, "\n")
-    plot_routes(routes)
+def select_file(entry_widget):
+    """Abre un diálogo para seleccionar un archivo CSV."""
+    from tkinter import filedialog
+    filename = filedialog.askopenfilename(
+        title="Seleccionar archivo CSV",
+        filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+    )
+    if filename:
+        entry_widget.delete(0, tk.END)
+        entry_widget.insert(0, filename)
 
 
-def main():
+def create_gui():
+    """Crea la interfaz gráfica principal."""
     root = tk.Tk()
-    root.title("BMTSP Interface")
-
-    frm = ttk.Frame(root, padding=10)
-    frm.grid()
-
-    ttk.Label(frm, text="CSV file:").grid(column=0, row=0, sticky=tk.W)
-    csv_var = tk.StringVar(value="python/ciudades.csv")
-    csv_entry = ttk.Entry(frm, width=30, textvariable=csv_var)
-    csv_entry.grid(column=1, row=0, columnspan=2, sticky=tk.W)
-
-    ttk.Label(frm, text="Salesmen (k):").grid(column=0, row=1, sticky=tk.W)
-    k_entry = ttk.Entry(frm, width=5)
-    k_entry.insert(0, "2")
-    k_entry.grid(column=1, row=1, sticky=tk.W)
-
-    ttk.Label(frm, text="Max cities:").grid(column=0, row=2, sticky=tk.W)
-    max_entry = ttk.Entry(frm, width=5)
-    max_entry.insert(0, "5")
-    max_entry.grid(column=1, row=2, sticky=tk.W)
-
-    output = scrolledtext.ScrolledText(frm, width=60, height=20)
-    output.grid(column=0, row=4, columnspan=3, pady=10)
-
-    ttk.Button(
-        frm,
-        text="Run Heuristic",
-        command=lambda: run_heuristic(csv_var, k_entry, max_entry, output),
-    ).grid(column=0, row=3, sticky=tk.W)
-
-    ttk.Button(
-        frm, text="Run AMPL", command=lambda: run_ampl(output, csv_var)
-    ).grid(column=1, row=3, sticky=tk.W)
-
-    ttk.Button(
-        frm, text="Run LKH", command=lambda: run_lkh(output, csv_var)
-    ).grid(column=2, row=3, sticky=tk.W)
-
-    root.mainloop()
+    root.title("Optimización BMTSP")
+    
+    # Configuración del estilo
+    style = ttk.Style()
+    style.configure("TButton", padding=6, relief="flat", background="#ccc")
+    style.configure("TFrame", background="#f0f0f0")
+    style.configure("TLabel", background="#f0f0f0")
+    
+    # Frame principal
+    main_frame = ttk.Frame(root, padding="10")
+    main_frame.pack(fill=tk.BOTH, expand=True)
+    
+    # Frame para la entrada de archivo
+    file_frame = ttk.Frame(main_frame)
+    file_frame.pack(fill=tk.X, pady=5)
+    
+    ttk.Label(file_frame, text="Archivo CSV:").pack(side=tk.LEFT, padx=(0, 5))
+    
+    csv_path = tk.StringVar()
+    file_entry = ttk.Entry(file_frame, textvariable=csv_path, width=50)
+    file_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    
+    browse_btn = ttk.Button(file_frame, text="Examinar...", 
+                          command=lambda: select_file(file_entry))
+    browse_btn.pack(side=tk.LEFT, padx=(5, 0))
+    
+    # Frame para los botones
+    button_frame = ttk.Frame(main_frame)
+    button_frame.pack(fill=tk.X, pady=10)
+    
+    # Botones
+    ampl_btn = ttk.Button(button_frame, text="Ejecutar AMPL", 
+                         command=lambda: run_ampl(output, csv_path))
+    ampl_btn.pack(side=tk.LEFT, padx=5)
+    
+    lkh_btn = ttk.Button(button_frame, text="Ejecutar LKH", 
+                        command=lambda: run_lkh(output, csv_path))
+    lkh_btn.pack(side=tk.LEFT, padx=5)
+    
+    # Área de salida
+    output_frame = ttk.LabelFrame(main_frame, text="Salida", padding="5")
+    output_frame.pack(fill=tk.BOTH, expand=True)
+    
+    output = scrolledtext.ScrolledText(
+        output_frame,
+        wrap=tk.WORD,
+        width=80,
+        height=20,
+        font=('Consolas', 10)
+    )
+    output.pack(fill=tk.BOTH, expand=True)
+    
+    # Barra de estado
+    status_bar = ttk.Label(
+        main_frame,
+        text="Listo",
+        relief=tk.SUNKEN,
+        anchor=tk.W
+    )
+    status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+    
+    # Redirigir stdout y stderr a la salida
+    class StdoutRedirector:
+        def __init__(self, text_widget):
+            self.text_widget = text_widget
+        
+        def write(self, message):
+            self.text_widget.insert(tk.END, message)
+            self.text_widget.see(tk.END)
+        
+        def flush(self):
+            pass
+    
+    sys.stdout = StdoutRedirector(output)
+    sys.stderr = StdoutRedirector(output)
+    
+    return root
 
 
 if __name__ == "__main__":
-    main()
-
-    return routes
-
+    app = create_gui()
+    app.mainloop()

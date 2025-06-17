@@ -1,5 +1,5 @@
 NAME: example
-TYPE: ATSP
+TYPE: TSP
 COMMENT: BMTSP example for 10 cities + depot
 DIMENSION: 11
 EDGE_WEIGHT_TYPE: EUC_2D

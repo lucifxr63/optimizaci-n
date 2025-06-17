@@ -1,0 +1,15 @@
+NAME: vii_region_maule
+TYPE: TSP
+COMMENT: Simulated region vii_region_maule
+DIMENSION: 8
+EDGE_WEIGHT_TYPE: EUC_2D
+NODE_COORD_SECTION
+1 20 60
+2 40 75
+3 55 80
+4 65 60
+5 50 40
+6 30 30
+7 70 35
+8 60 20
+EOF

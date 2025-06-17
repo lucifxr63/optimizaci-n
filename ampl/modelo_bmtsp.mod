@@ -39,9 +39,9 @@ s.t. StartDepot{s in S}:
 s.t. EndDepot{s in S}:
     sum{i in N} x[s,i,0] = 1;
 
-# City limit for each salesman
+# City limit for each salesman (número total de ciudades distintas que visita)
 s.t. LimitCities{s in S}:
-    sum{i in N} x[s,0,i] <= max_ciudades;
+    sum{i in N, j in V: i != j} x[s,i,j] <= max_ciudades;
 
 # MTZ subtour elimination
 s.t. MTZ{s in S, i in N, j in N: i <> j}:

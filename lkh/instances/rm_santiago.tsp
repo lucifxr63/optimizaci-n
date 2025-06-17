@@ -1,0 +1,17 @@
+NAME: rm_santiago
+TYPE: TSP
+COMMENT: Comuna centers in Región Metropolitana
+DIMENSION: 10
+EDGE_WEIGHT_TYPE: EUC_2D
+NODE_COORD_SECTION
+1 50 50
+2 30 70
+3 80 80
+4 70 65
+5 90 40
+6 20 30
+7 55 40
+8 60 55
+9 70 20
+10 40 20
+EOF

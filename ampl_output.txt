@@ -1,0 +1,4 @@
+Error at _cmdno 2 executing "solve" command
+(file C:\Users\lucia\AppData\Local\Temp\tmp8e0g1pz0.run, line 5, offset 181):
+error processing objective Total_Distance:
+	no value for dist[0,1]
