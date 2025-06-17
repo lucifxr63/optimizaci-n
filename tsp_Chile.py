@@ -165,6 +165,15 @@ def run_all_instances_gui(tsp_paths, k=2, mmin=1, mmax=7):
 
     results = []
 
+    bks_dict = {
+        "rm_santiago_extended": 215.0,
+        "norte_grande": 220.0,
+        "patagonia": 252.0,
+        "zona_central": 188.0,
+        "zona_lacustre": 155.0,
+        "zona_sur": 192.0
+    }
+
     for tsp_path in tsp_paths:
         tsp_name = os.path.splitext(os.path.basename(tsp_path))[0]
         tour_file = os.path.join(tour_dir, f"{tsp_name}.tour")
@@ -182,8 +191,8 @@ def run_all_instances_gui(tsp_paths, k=2, mmin=1, mmax=7):
             duration = time.time() - start_time
 
             cost, _ = parse_lkh_tour(tour_file)
-            bks = 0  # Placeholder, si se desea comparar, cargar valores reales aquí
-            gap = 0.0
+            bks = bks_dict.get(tsp_name, 0)
+            gap = 100 * (cost - bks) / bks if bks > 0 else 0
             results.append({
                 "name": tsp_name,
                 "k": k,
