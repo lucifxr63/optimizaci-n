@@ -3,10 +3,13 @@ import subprocess
 import math
 import csv
 import time
+import matplotlib
+matplotlib.use('Agg')  # Set backend to Agg for non-interactive plotting
 import matplotlib.pyplot as plt
 from fpdf import FPDF
 import tkinter as tk
 from tkinter import filedialog, simpledialog
+from pathlib import Path
 
 class Ciudad:
     def __init__(self, idx, x, y):
@@ -70,25 +73,73 @@ def export_routes_to_csv(rutas, file_path):
         for i, ruta in enumerate(rutas, 1):
             writer.writerow([f"Vendedor {i}", "0 -> " + " -> ".join(str(n) for n in ruta) + " -> 0"])
 
-def plot_routes(cities, rutas, save_path=None):
-    colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
-    depot = cities[0]
-    plt.figure(figsize=(8, 6))
-    for i, ruta in enumerate(rutas):
+def plot_route_map(cities, routes, output_path):
+    """
+    Plot and save a map of the routes.
+    
+    Args:
+        cities: List of City objects
+        routes: List of routes, where each route is a list of city indices
+        output_path: Path to save the output image
+    """
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+             '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    
+    plt.figure(figsize=(12, 10))
+    
+    # Plot all cities
+    x_coords = [city.x for city in cities[1:]]  # Skip depot for individual points
+    y_coords = [city.y for city in cities[1:]]
+    plt.scatter(x_coords, y_coords, color='#1f77b4', s=80, alpha=0.7, 
+               edgecolors='white', linewidth=1, label='Ciudades')
+    
+    # Plot depot
+    plt.scatter([cities[0].x], [cities[0].y], color='black', marker='s', 
+               s=150, label='Depósito', zorder=10, edgecolor='white', linewidth=1.5)
+    
+    # Plot each route with a different color
+    for i, route in enumerate(routes):
+        if not route:
+            continue
+            
         color = colors[i % len(colors)]
-        route_coords = [(depot.x, depot.y)] + [(cities[n].x, cities[n].y) for n in ruta] + [(depot.x, depot.y)]
+        # Include depot at start and end of route
+        route_coords = [(cities[0].x, cities[0].y)]
+        for node_idx in route:
+            route_coords.append((cities[node_idx].x, cities[node_idx].y))
+        route_coords.append((cities[0].x, cities[0].y))
+        
+        # Extract x and y coordinates
         xs, ys = zip(*route_coords)
-        plt.plot(xs, ys, marker='o', color=color, label=f'Vendedor {i + 1}')
-    plt.scatter(depot.x, depot.y, color='black', label='Depósito', zorder=5)
-    plt.title('Rutas de los vendedores')
-    plt.xlabel('X')
-    plt.ylabel('Y')
-    plt.legend()
-    plt.grid(True)
+        plt.plot(xs, ys, marker='o', color=color, linestyle='-', 
+                linewidth=2.5, markersize=8, markerfacecolor='white',
+                markeredgewidth=1.5, markeredgecolor=color,
+                label=f'Vendedor {i+1}')
+        
+        # Add city numbers
+        for j, (x, y) in enumerate(route_coords[1:-1], 1):
+            plt.text(x, y, f' {route[j-1]}', fontsize=9, 
+                    bbox=dict(facecolor='white', alpha=0.7, 
+                             edgecolor='none', boxstyle='round,pad=0.2'))
+    
+    plt.title('Mapa de Rutas de Vendedores', fontsize=14, pad=20)
+    plt.xlabel('Coordenada X', fontsize=12)
+    plt.ylabel('Coordenada Y', fontsize=12)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+    plt.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path)
+    
+    # Add watermark
+    plt.figtext(0.5, 0.01, 'Generado por Optimización de Rutas', 
+               ha='center', fontsize=10, color='gray', alpha=0.7)
+    
+    # Ensure output directory exists
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
     plt.close()
+    
+    print(f"✓ Mapa de rutas guardado en: {output_path}")
+    return output_path
 
 def export_table_pdf(instances, file_path):
     pdf = FPDF()
@@ -161,6 +212,9 @@ def run_all_instances_gui(tsp_paths, k=2, mmin=1, mmax=7):
     par_template = os.path.join(base_dir, "lkh", "params", "example.par")
     par_tempfile = os.path.join(base_dir, "lkh", "params", "temp.par")
     tour_dir = os.path.join(base_dir, "lkh", "tours")
+    maps_dir = os.path.join(base_dir, "lkh", "maps")
+    os.makedirs(tour_dir, exist_ok=True)
+    os.makedirs(maps_dir, exist_ok=True)
     pdf_output = os.path.join(tour_dir, "tabla_resultados.pdf")
 
     results = []
@@ -190,7 +244,14 @@ def run_all_instances_gui(tsp_paths, k=2, mmin=1, mmax=7):
             subprocess.run([r"D:\\descargas\\LKH-3.exe", par_tempfile], check=True)
             duration = time.time() - start_time
 
-            cost, _ = parse_lkh_tour(tour_file)
+            cost, routes = parse_lkh_tour(tour_file)
+            
+            # Generate and save route map
+            cities = load_cities(tsp_path)
+            map_filename = f"{tsp_name}_k{k}_mmin{mmin}_mmax{mmax}.png"
+            map_path = os.path.join(maps_dir, map_filename)
+            plot_route_map(cities, routes, map_path)
+            
             bks = bks_dict.get(tsp_name, 0)
             gap = 100 * (cost - bks) / bks if bks > 0 else 0
             results.append({
