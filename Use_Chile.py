@@ -21,21 +21,42 @@ class TextRedirector(io.TextIOBase):
     def __init__(self, widget, tag="stdout"):
         self.widget = widget
         self.tag = tag
+        self.buffer = ""
+        self.lock = False
         
     def write(self, str):
         # Asegurarse de que el texto se escriba en el hilo principal
-        self.widget.after(0, self._append_text, str)
+        self.buffer += str
+        if not self.lock:
+            self.lock = True
+            self.widget.after(100, self._process_buffer)
         return len(str)
     
+    def _process_buffer(self):
+        if self.buffer:
+            self._append_text(self.buffer)
+            self.buffer = ""
+        self.lock = False
+    
     def _append_text(self, text):
-        self.widget.configure(state='normal')
-        self.widget.insert(tk.END, text, (self.tag,))
-        self.widget.see(tk.END)  # Auto-scroll
-        self.widget.configure(state='disabled')
-        self.widget.update_idletasks()
+        try:
+            self.widget.configure(state='normal')
+            # Insertar el texto
+            self.widget.insert(tk.END, text, (self.tag,))
+            # Auto-scroll
+            self.widget.see(tk.END)
+            # Actualizar la interfaz
+            self.widget.update_idletasks()
+        except Exception as e:
+            print(f"Error al actualizar la consola: {e}")
+        finally:
+            self.widget.configure(state='disabled')
     
     def flush(self):
-        pass
+        # Procesar cualquier dato restante en el buffer
+        if self.buffer:
+            self._append_text(self.buffer)
+            self.buffer = ""
 
 class Ciudad:
     def __init__(self, idx, x, y):
@@ -222,7 +243,7 @@ def get_dimension_from_tsp(tsp_path):
 class OptimizacionApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Optimización de Rutas - MTSP")
+        self.root.title("Optimización de Rutas - BMTSP")
         self.root.geometry("800x600")
         
         # Variables
@@ -480,7 +501,7 @@ class OptimizacionApp:
     def run_optimization_thread(self, selected_files, k, mmin, mmax):
         try:
             self.root.after(0, lambda: self.status_var.set(f"Procesando {len(selected_files)} archivos..."))
-            run_all_instances_gui(selected_files, k, mmin, mmax)
+            run_all_instances_gui(selected_files, k, mmin, mmax, self.root)
             self.root.after(0, lambda: self.status_var.set("Optimización completada exitosamente."))
             
             # Mostrar mensaje de éxito
@@ -542,7 +563,7 @@ def run_gui():
     
     root.mainloop()
 
-def run_all_instances_gui(tsp_paths, k=2, mmin=1, mmax=7):
+def run_all_instances_gui(tsp_paths, k=2, mmin=1, mmax=7, root_window=None):
     # Obtener el directorio base del proyecto (una carpeta arriba del directorio actual)
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
@@ -603,9 +624,38 @@ def run_all_instances_gui(tsp_paths, k=2, mmin=1, mmax=7):
             if not os.path.exists(lkh_executable):
                 raise FileNotFoundError(f"No se encontró el ejecutable LKH-3.exe en: {lkh_executable}")
                 
-            # Ejecutar LKH-3
+            # Ejecutar LKH-3 y capturar la salida en tiempo real
             try:
-                subprocess.run([lkh_executable, par_tempfile], check=True)
+                # Configurar el proceso para ejecutarse sin buffer
+                process = subprocess.Popen(
+                    ['cmd', '/c', lkh_executable, par_tempfile],  # Usar cmd para mejor manejo en Windows
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    universal_newlines=True,
+                    bufsize=0,  # Sin buffer
+                    creationflags=subprocess.CREATE_NO_WINDOW  # Evitar ventana de consola
+                )
+                
+                # Leer la salida en tiempo real
+                while True:
+                    # Leer un carácter a la vez para mejor respuesta
+                    output = process.stdout.read(1)
+                    if output == '' and process.poll() is not None:
+                        break
+                    if output:
+                        # Usar print para redirigir a la consola
+                        print(output, end='', flush=True)
+                        # Forzar la actualización de la interfaz si se proporcionó una ventana raíz
+                        if root_window:
+                            try:
+                                root_window.update_idletasks()
+                            except Exception as e:
+                                print(f"Error al actualizar la interfaz: {e}")
+                
+                # Verificar el código de salida
+                if process.returncode != 0:
+                    raise subprocess.CalledProcessError(process.returncode, process.args)
+                    
             except subprocess.CalledProcessError as e:
                 print(f"Error al ejecutar LKH-3: {e}")
                 print(f"Comando ejecutado: {lkh_executable} {par_tempfile}")
