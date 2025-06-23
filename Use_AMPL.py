@@ -464,7 +464,7 @@ def run_ampl_optimization(ciudades, k=2, max_ciudades=5, callback=None):
             rutas_completas[v] = reconstruir_ruta(conexiones)
         
         # Obtener el costo total
-        total_distance = ampl.get_objective("Total_Distance").value()
+        total_distance = ampl.get_objective("Distancia_Total").value()
         
         if callback:
             callback("Optimización completada exitosamente")
