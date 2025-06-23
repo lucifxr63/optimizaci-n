@@ -1,5 +1,5 @@
-PROBLEM_FILE = z:\DEV\Respos\Universidad\Opti\optimizaci-n\lkh\instances\zona_sur.tsp
-MTSP_SOLUTION_FILE = z:\DEV\Respos\Universidad\Opti\optimizaci-n\lkh\tours\zona_sur.tour
+PROBLEM_FILE = Z:/DEV/Respos/Universidad/Opti/optimizaci-n/lkh/instances/rm_santiago.tsp
+MTSP_SOLUTION_FILE = z:\DEV\Respos\Universidad\Opti\optimizaci-n\lkh\tours\rm_santiago.tour
 SALESMEN = 2
 MTSP_OBJECTIVE = MINMAX
 DEPOT = 1
