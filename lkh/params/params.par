@@ -1,6 +1,0 @@
-PROBLEM_FILE = d:\DEV\optimizacion\opti\optimizaci-n\lkh\problem.tsp
-MTSP_SOLUTION_FILE = d:\DEV\optimizacion\opti\optimizaci-n\lkh\solution.tour
-SALESMEN = 2
-MTSP_OBJECTIVE = MINMAX
-DEPOT = 1
-RUNS = 1

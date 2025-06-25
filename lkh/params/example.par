@@ -1,9 +1,0 @@
-PROBLEM_FILE = lkh/instances/example.tsp
-MTSP_SOLUTION_FILE = lkh/tours/solution.tour
-SALESMEN = 2
-MTSP_OBJECTIVE = MINMAX
-DEPOT = 1
-RUNS = 1
-TRACE_LEVEL = 1
-MTSP_MIN_SIZE = 4
-MTSP_MAX_SIZE = 7
