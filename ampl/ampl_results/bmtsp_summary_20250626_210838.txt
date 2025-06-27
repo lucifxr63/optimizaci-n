@@ -1,0 +1,8 @@
+AMPL BMTSP SOLVER - COMPARATIVE RESULTS
+============================================================
+Date: 2025-06-26 21:08:38
+Number of salesmen: 5
+Max cities per salesman: 20
+
+PROBLEM         |   TOTAL COST |   BEST ROUTE |  WORST ROUTE |  STD DEV | TIME (s) | STATUS
+----------------------------------------------------------------------------------------------------
